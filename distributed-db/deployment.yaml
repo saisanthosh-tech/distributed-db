@@ -1,0 +1,72 @@
+# deployment.yaml
+
+# 1. Deployment for the Router
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-router-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-router
+  template:
+    metadata:
+      labels:
+        app: db-router
+    spec:
+      containers:
+      - name: router
+        image: distributed-db:latest # The Docker image we built
+        command: ["./router"]
+        ports:
+        - containerPort: 7070
+
+---
+# 2. Service to expose the Router to the outside world
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-router-service
+spec:
+  type: LoadBalancer # This makes it accessible via a public IP
+  selector:
+    app: db-router
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 7070
+
+---
+# 3. StatefulSet for the Database Nodes (Shard 0)
+# We use a StatefulSet because database nodes need stable network identities.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-shard0
+spec:
+  serviceName: "db-shard0-service"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: db-shard0
+  template:
+    metadata:
+      labels:
+        app: db-shard0
+    spec:
+      containers:
+      - name: database
+        image: distributed-db:latest
+        command: ["./database"]
+        # This is pseudo-code. A real setup would use more advanced K8s features
+        # to assign the correct address to each pod.
+        args:
+        - "--shard=0"
+        # - "--addr=..." # K8s assigns addresses dynamically.
+        ports:
+        - containerPort: 8080
+
+# NOTE: A similar StatefulSet would be needed for Shard 1.
+# A full production setup would also require headless services for peer discovery
+# and persistent volumes for storing data on disk.
