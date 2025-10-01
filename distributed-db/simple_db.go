@@ -8,38 +8,48 @@ import (
 	"sync"
 )
 
-// Simple in-memory key-value store
+// Task represents a single to-do item
+type Task struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
+}
+
+// In-memory store for our tasks
 var (
-	store = make(map[string]string)
-	mu    sync.Mutex
+	tasks  = make(map[int]Task)
+	nextID = 1
+	mu     sync.Mutex
 )
 
-// The handler for reading and writing keys
-func keyHandler(w http.ResponseWriter, r *http.Request) {
-	key := r.URL.Path[len("/keys/"):] // Get the key from the URL
-
+// tasksHandler handles requests to /tasks
+func tasksHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		mu.Lock()
-		value, ok := store[key]
-		mu.Unlock()
+		defer mu.Unlock()
+		taskList := make([]Task, 0, len(tasks))
+		for _, task := range tasks {
+			taskList = append(taskList, task)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(taskList)
 
-		if !ok {
-			http.Error(w, "Key not found", http.StatusNotFound)
+	case "POST":
+		var task Task
+		if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.Write([]byte(value))
 
-	case "PUT":
-		value, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Error reading request body", http.StatusInternalServerError)
-			return
-		}
 		mu.Lock()
-		store[key] = string(value)
-		mu.Unlock()
+		defer mu.Unlock()
+		task.ID = nextID
+		nextID++
+		tasks[task.ID] = task
 		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -47,45 +57,26 @@ func keyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.HandleFunc("/keys/", keyHandler)
+	http.HandleFunc("/tasks", tasksHandler)
 	log.Println("Server starting on port 8080...")
-	// Codespaces will automatically make this port public.
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
 ```
 
-#### **Step 2: Use Two Terminals Correctly**
+#### **Step 4: Run the Final Test**
 
-This is the most important part. We need two terminals. One to be the server, one to be the client.
+Now that we have a clean file, this will work.
 
-**Terminal A (The Server):**
-
-1.  Open your Codespaces terminal.
-2.  Run this command to start the server:
-    ```bash
-    go run simple_db.go
-    ```
-3.  The terminal will print `Server starting on port 8080...`. The terminal will now be **busy**. You will **not** get a new command prompt (`$`). This is correct. The server is running. **Leave this terminal alone.**
-
-
-
-**Terminal B (The Client):**
-
-1.  Open a **new, second terminal** by clicking the `+` icon.
-2.  In this new terminal, you will test the server that is running in Terminal A.
-3.  First, **write** some data by running this command:
-    ```bash
-    curl -X PUT -d "it finally works" http://localhost:8080/keys/test
-    ```
-4.  Now, **read** the data back by running this command:
-    ```bash
-    curl http://localhost:8080/keys/test
-    ```
-
-### **The Result**
-
-The final command in **Terminal B** will print:
+**In Terminal A:**
+```bash
+go run simple_db.go
 ```
-it finally works
+*The server will start, and the terminal will become busy.*
+
+**In a new Terminal B:**
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"title": "This is the one"}' http://localhost:8080/tasks
+curl http://localhost:8080/tasks
+
